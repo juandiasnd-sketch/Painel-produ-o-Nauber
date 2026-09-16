@@ -124,6 +124,75 @@
     margin-top:8px;
   }
 
+  /* PIE WIDGET */
+  .pie-card{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:var(--radius);
+    padding:26px 28px 22px;
+    margin-bottom:22px;
+  }
+  .pie-wrap{
+    display:flex;
+    align-items:center;
+    gap:56px;
+    flex-wrap:wrap;
+    padding-top:6px;
+  }
+  .pie-chart-box{
+    position:relative;
+    width:220px;height:220px;
+    flex:none;
+  }
+  .pie-chart{
+    width:220px;height:220px;
+    border-radius:50%;
+    background:conic-gradient(#26282c 0 100%);
+    box-shadow:0 0 0 1px rgba(255,255,255,.04);
+    transition:background .4s ease;
+  }
+  .pie-center-label{
+    position:absolute;
+    left:50%;bottom:18%;
+    transform:translateX(-50%);
+    font-size:15px;
+    font-weight:800;
+    color:#0b1220;
+    background:rgba(255,255,255,.92);
+    padding:3px 10px;
+    border-radius:999px;
+    letter-spacing:.01em;
+  }
+  .pie-legend{
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    min-width:260px;
+    flex:1;
+  }
+  .legend-row{
+    display:flex;
+    align-items:center;
+    gap:11px;
+  }
+  .legend-dot{
+    width:13px;height:13px;
+    border-radius:50%;
+    flex:none;
+  }
+  .legend-text{
+    font-size:13.5px;
+    color:#dfe1e4;
+    flex:1;
+  }
+  .legend-val{
+    font-size:13px;
+    font-weight:700;
+    color:var(--muted);
+    min-width:44px;
+    text-align:right;
+  }
+
   /* TABLE */
   .table-card{
     background:var(--card);
@@ -186,6 +255,8 @@
     .clock-block{text-align:left;}
     .topbar{flex-direction:column;}
     .kpi-value{font-size:32px;}
+    .pie-wrap{gap:28px;justify-content:center;}
+    .pie-chart-box,.pie-chart{width:180px;height:180px;}
   }
 </style>
 </head>
@@ -211,8 +282,17 @@
     <span id="status-text">carregando dados da planilha...</span>
   </div>
 
-  <section class="kpi-grid" id="kpiGrid">
-    <div class="card"><div class="pill">● CARREGANDO INDICADORES</div><div class="kpi-value no-data">Aguarde…</div></div>
+  <section class="pie-card">
+    <div class="pill">● PPCP — NAUBER MÁQUINAS</div>
+    <div class="pie-wrap">
+      <div class="pie-chart-box">
+        <div class="pie-chart" id="pieChart"></div>
+        <div class="pie-center-label" id="pieLabel">—</div>
+      </div>
+      <div class="pie-legend" id="pieLegend">
+        <div class="legend-row"><span class="legend-dot" style="background:#8b9096"></span><span class="legend-text">Carregando indicadores...</span></div>
+      </div>
+    </div>
   </section>
 
   <section class="table-card">
@@ -422,49 +502,67 @@ async function fetchIndicators(){
   return indicators;
 }
 
-function indicatorOk(ind){
-  if (ind.current == null || ind.meta == null || !ind.condition) return null;
-  if (ind.condition.startsWith('>')) return ind.current >= ind.meta;
-  if (ind.condition.startsWith('<')) return ind.current <= ind.meta;
-  return null;
+/* Pizza com as médias gerais de cada indicador — mesmo estilo do painel Looker:
+   fatia de cada indicador proporcional ao seu valor médio (mediaAcum, com
+   fallback para o valor do mês atual), na mesma ordem/cores da legenda original. */
+const PIE_SERIES = [
+  { id:'01', color:'#3b82f6', fallbackName:'Tempo Médio de execução dos itens a produzir' },
+  { id:'02', color:'#06b6d4', fallbackName:'Percentual de reprocessos / retrabalho' },
+  { id:'04', color:'#ec4899', fallbackName:'Percentual de equipamentos com problemas não detectados' },
+  { id:'03', color:'#f97316', fallbackName:'Percentual de equipamentos com pendência de materiais' }
+];
+
+function fmtPct(n){
+  if (n == null) return null;
+  return (n % 1 === 0 ? n.toFixed(0) : n.toFixed(2).replace('.', ',')) + '%';
 }
 
-function renderIndicators(data){
-  const grid = document.getElementById('kpiGrid');
-  if (!data.length){
-    grid.innerHTML = '<div class="card"><div class="pill">● INDICADORES</div><div class="kpi-value no-data">Nenhum indicador encontrado na planilha.</div></div>';
+function renderPie(indicators){
+  const byId = Object.fromEntries(indicators.map(i => [i.id, i]));
+  const series = PIE_SERIES.map(s => {
+    const ind = byId[s.id];
+    const value = ind ? (ind.mediaAcum != null ? ind.mediaAcum : ind.current) : null;
+    return { ...s, name: ind ? ind.name : s.fallbackName, value };
+  });
+
+  const legend = document.getElementById('pieLegend');
+  const pie = document.getElementById('pieChart');
+  const label = document.getElementById('pieLabel');
+
+  const total = series.reduce((sum, s) => sum + (s.value || 0), 0);
+
+  if (total <= 0){
+    pie.style.background = 'conic-gradient(#26282c 0 100%)';
+    label.textContent = 'sem dados';
+    legend.innerHTML = series.map(s => `
+      <div class="legend-row">
+        <span class="legend-dot" style="background:${s.color}"></span>
+        <span class="legend-text">${s.name}</span>
+        <span class="legend-val">—</span>
+      </div>`).join('');
     return;
   }
 
-  grid.innerHTML = data.map(ind => {
-    const ok = indicatorOk(ind);
-    const dotCls = ok === true ? 'dot-green' : ok === false ? 'dot-amber' : 'dot-grey';
-    const statusLabel = ok === true ? 'dentro da meta' : ok === false ? 'fora da meta' : 'sem dado suficiente';
-    const valueStr = ind.current != null ? (ind.current % 1 === 0 ? ind.current.toFixed(0) : ind.current.toFixed(2).replace('.', ',')) + '%' : null;
+  let acc = 0;
+  const stops = [];
+  let biggest = series[0];
+  series.forEach(s => {
+    const frac = (s.value || 0) / total * 100;
+    if ((s.value || 0) > (biggest.value || 0)) biggest = s;
+    stops.push(`${s.color} ${acc}% ${acc + frac}%`);
+    acc += frac;
+  });
 
-    return `<div class="card">
-      <div class="pill">● ${ind.name.toUpperCase()}</div>
-      ${valueStr
-        ? `<div class="kpi-value">${valueStr}</div>`
-        : `<div class="kpi-value no-data">sem dados</div>`}
-      <div class="kpi-sub">Indicador ${ind.id} · mês atual</div>
-      <div class="kpi-stats">
-        <div class="kpi-stat">
-          <span class="label">Meta</span>
-          <span class="val">${ind.meta != null ? (ind.condition||'') + ' ' + ind.meta + '%' : '—'}</span>
-        </div>
-        <div class="kpi-stat">
-          <span class="label">Média acum.</span>
-          <span class="val">${ind.mediaAcum != null ? ind.mediaAcum + '%' : '—'}</span>
-        </div>
-        <div class="kpi-stat">
-          <span class="label">Mês anterior</span>
-          <span class="val">${ind.previous != null ? ind.previous + '%' : '—'}</span>
-        </div>
-      </div>
-      <div class="kpi-status"><span class="dot ${dotCls}"></span> ${statusLabel}</div>
-    </div>`;
-  }).join('');
+  pie.style.background = `conic-gradient(${stops.join(', ')})`;
+  const biggestPct = (biggest.value || 0) / total * 100;
+  label.textContent = biggestPct.toFixed(1).replace('.', ',') + '%';
+
+  legend.innerHTML = series.map(s => `
+    <div class="legend-row">
+      <span class="legend-dot" style="background:${s.color}"></span>
+      <span class="legend-text">${s.name}</span>
+      <span class="legend-val">${s.value != null ? fmtPct(s.value) : '—'}</span>
+    </div>`).join('');
 }
 
 /* =========================================================
@@ -489,7 +587,7 @@ async function loadAll(){
   try{
     const [orders, indicators] = await Promise.all([fetchOrders(), fetchIndicators()]);
     renderOrders(orders);
-    renderIndicators(indicators);
+    renderPie(indicators);
     const now = new Date();
     statusText.textContent = 'atualizado às ' + now.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
     statusDot.className = 'dot dot-green';
