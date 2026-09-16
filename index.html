@@ -74,7 +74,7 @@
   .pill{
     display:inline-flex;align-items:center;gap:8px;
     background:linear-gradient(180deg,#28a862,var(--green-dark));
-    color:#08150c;
+    color:#ffffff;
     font-weight:800;
     font-size:12.5px;
     letter-spacing:.03em;
@@ -83,9 +83,7 @@
     margin-bottom:18px;
     box-shadow:0 4px 14px rgba(21,128,61,.28);
   }
-  .pill.pill-red{background:linear-gradient(180deg,#f4657a,#c62b42);box-shadow:0 4px 14px rgba(198,43,66,.3);}
-  .pill.pill-amber{background:linear-gradient(180deg,#f8bd54,#c9821b);box-shadow:0 4px 14px rgba(201,130,27,.3);}
-  .pill .dot{background:#08150c;box-shadow:none;}
+  .pill .dot{background:#ffffff;box-shadow:none;opacity:.85;}
 
   /* GRID */
   .kpi-grid{
@@ -493,7 +491,7 @@ function renderOrders(data){
   }).join('');
 
   const pillEl = document.getElementById('ordersPill');
-  if (pillEl) pillEl.className = 'pill' + ((anyAtrasado || anyUrgente) ? ' pill-red' : '');
+  if (pillEl) pillEl.className = 'pill';
 }
 
 /* =========================================================
@@ -554,10 +552,13 @@ async function fetchIndicators(){
    fatia de cada indicador proporcional à sua "Média acumulada" na planilha,
    na mesma ordem/cores da legenda original. */
 const PIE_SERIES = [
-  { id:'01', color:'#3b82f6', fallbackName:'Tempo Médio de execução dos itens a produzir' },
+  { id:'01', color:'#3b82f6', fallbackName:'Tempo Médio de montagem dos itens a produzir' },
   { id:'02', color:'#06b6d4', fallbackName:'Percentual de reprocessos / retrabalho' },
-  { id:'04', color:'#ec4899', fallbackName:'Percentual de equipamentos com problemas não detectados' },
-  { id:'03', color:'#f97316', fallbackName:'Percentual de equipamentos com pendência de materiais' }
+  { id:'03', color:'#f97316', fallbackName:'Percentual de equipamentos com pendência de materiais' },
+  { id:'04', color:'#ec4899', fallbackName:'Percentual de equipamentos com problemas não detectados no teste' },
+  { id:'05', color:'#a855f7', fallbackName:'Percentual de ordens de produção concluídas no prazo' },
+  { id:'06', color:'#eab308', fallbackName:'Percentual de aprovação no teste final da produção' },
+  { id:'07', color:'#10b981', fallbackName:'Percentual de defeitos recorrentes por componente/equipamento' }
 ];
 
 function fmtPct(n){
@@ -612,13 +613,8 @@ function renderPie(indicators){
       <span class="legend-val">${s.value != null ? fmtPct(s.value) : '—'}</span>
     </div>`).join('');
 
-  // pill do card fica vermelho se algum indicador (usando a média acumulada) estiver fora da meta
   const pillEl = document.getElementById('piePill');
-  const anyOutOfTarget = indicators.some(ind => {
-    if (ind.mediaAcum == null || ind.meta == null || !ind.condition) return false;
-    return ind.condition.startsWith('>') ? ind.mediaAcum < ind.meta : ind.mediaAcum > ind.meta;
-  });
-  pillEl.className = 'pill' + (anyOutOfTarget ? ' pill-red' : '');
+  if (pillEl) pillEl.className = 'pill';
 }
 
 /* =========================================================
