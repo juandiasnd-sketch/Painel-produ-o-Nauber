@@ -309,6 +309,23 @@
   }
   .legend span{display:flex;align-items:center;gap:7px;}
 
+  .fs-btn{
+    position:fixed;
+    right:20px;bottom:20px;
+    z-index:50;
+    background:var(--header-grad);
+    color:#ffffff;
+    border:none;
+    font-weight:800;
+    font-size:13px;
+    letter-spacing:.02em;
+    padding:11px 18px;
+    border-radius:999px;
+    box-shadow:0 4px 14px rgba(12,92,48,.35);
+    cursor:pointer;
+  }
+  .fs-btn:hover{filter:brightness(1.08);}
+
   @media (max-width:640px){
     .header-inner{padding:16px 16px;}
     .page{padding:20px 16px 32px;}
@@ -388,6 +405,8 @@
   </footer>
 
 </div>
+
+<button id="fsBtn" class="fs-btn" onclick="toggleFullscreen()">⛶ Tela cheia</button>
 
 <script>
 /* =========================================================
@@ -786,6 +805,58 @@ async function loadAll(){
 
 loadAll();
 setInterval(loadAll, REFRESH_INTERVAL_MS);
+
+/* =========================================================
+   TELA CHEIA
+   Os navegadores bloqueiam tela cheia automática ao carregar a
+   página (por segurança), então entramos em tela cheia assim que
+   houver a primeira interação (clique/toque/tecla) — e deixamos um
+   botão fixo para ativar/desativar manualmente a qualquer momento.
+   ========================================================= */
+function isFullscreen(){
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function enterFullscreen(){
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (req) req.call(el).catch(() => {});
+}
+
+function exitFullscreen(){
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  if (exit) exit.call(document).catch(() => {});
+}
+
+function toggleFullscreen(){
+  if (isFullscreen()) exitFullscreen();
+  else enterFullscreen();
+}
+
+function updateFullscreenBtn(){
+  const btn = document.getElementById('fsBtn');
+  if (!btn) return;
+  btn.textContent = isFullscreen() ? '⤢ Sair da tela cheia' : '⛶ Tela cheia';
+}
+
+// tenta entrar em tela cheia já no carregamento (funciona em alguns contextos,
+// como quando a página é aberta a partir de um clique/atalho)
+enterFullscreen();
+
+// senão, entra assim que houver a primeira interação do usuário na página
+function autoFullscreenOnce(){
+  if (!isFullscreen()) enterFullscreen();
+  document.removeEventListener('click', autoFullscreenOnce);
+  document.removeEventListener('touchend', autoFullscreenOnce);
+  document.removeEventListener('keydown', autoFullscreenOnce);
+}
+document.addEventListener('click', autoFullscreenOnce);
+document.addEventListener('touchend', autoFullscreenOnce);
+document.addEventListener('keydown', autoFullscreenOnce);
+
+document.addEventListener('fullscreenchange', updateFullscreenBtn);
+document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
+updateFullscreenBtn();
 </script>
 </body>
 </html>
