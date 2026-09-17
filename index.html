@@ -156,7 +156,8 @@
     border-radius:50%;
     background:conic-gradient(#e6e9e7 0 100%);
     box-shadow:0 0 0 1px rgba(20,24,26,.06);
-    transition:background .4s ease;
+    transition:background .3s ease;
+    cursor:pointer;
   }
   .pie-center-label{
     position:absolute;
@@ -170,11 +171,12 @@
     padding:3px 10px;
     border-radius:999px;
     letter-spacing:.01em;
+    pointer-events:none;
   }
   .pie-legend{
     display:flex;
     flex-direction:column;
-    gap:14px;
+    gap:6px;
     min-width:260px;
     flex:1;
   }
@@ -182,7 +184,17 @@
     display:flex;
     align-items:center;
     gap:11px;
+    padding:6px 10px;
+    margin:0 -10px;
+    border-radius:10px;
+    cursor:pointer;
+    transition:background .15s ease, opacity .15s ease;
   }
+  .legend-row:hover{background:#f2f4f3;}
+  .legend-row.active{background:#e9f6ee;}
+  .legend-row.active .legend-text,
+  .legend-row.active .legend-val{color:var(--green-dark);}
+  .legend-row.dimmed{opacity:.42;}
   .legend-dot{
     width:13px;height:13px;
     border-radius:50%;
@@ -339,7 +351,7 @@
     <div class="pill" id="piePill">● PPCP — NAUBER MÁQUINAS</div>
     <div class="pie-wrap">
       <div class="pie-chart-box">
-        <div class="pie-chart" id="pieChart"></div>
+        <div class="pie-chart" id="pieChart" onclick="handlePieClick(event)"></div>
         <div class="pie-center-label" id="pieLabel">—</div>
       </div>
       <div class="pie-legend" id="pieLegend">
@@ -639,55 +651,103 @@ function fmtPct(n){
   return (n % 1 === 0 ? n.toFixed(0) : n.toFixed(2).replace('.', ',')) + '%';
 }
 
+/* Estado da pizza — guardado para permitir clicar nas fatias/legenda
+   (destaca a fatia clicada, apaga as demais, e alterna ao clicar de novo). */
+let pieState = { series: [], total: 0, selected: null };
+
 function renderPie(indicators){
   const byId = Object.fromEntries(indicators.map(i => [i.id, i]));
-  const series = PIE_SERIES.map(s => {
+  const rawSeries = PIE_SERIES.map(s => {
     const ind = byId[s.id];
     const value = ind ? ind.mediaAcum : null; // usa sempre a "Média acumulada" da planilha
     return { ...s, name: ind ? ind.name : s.fallbackName, value };
   });
 
-  const legend = document.getElementById('pieLegend');
-  const pie = document.getElementById('pieChart');
-  const label = document.getElementById('pieLabel');
-
-  const total = series.reduce((sum, s) => sum + (s.value || 0), 0);
-
-  if (total <= 0){
-    pie.style.background = 'conic-gradient(#26282c 0 100%)';
-    label.textContent = 'sem dados';
-    legend.innerHTML = series.map(s => `
-      <div class="legend-row">
-        <span class="legend-dot" style="background:${s.color}"></span>
-        <span class="legend-text">${s.name}</span>
-        <span class="legend-val">—</span>
-      </div>`).join('');
-    return;
-  }
+  const total = rawSeries.reduce((sum, s) => sum + (s.value || 0), 0);
 
   let acc = 0;
-  const stops = [];
-  let biggest = series[0];
-  series.forEach(s => {
-    const frac = (s.value || 0) / total * 100;
-    if ((s.value || 0) > (biggest.value || 0)) biggest = s;
-    stops.push(`${s.color} ${acc}% ${acc + frac}%`);
-    acc += frac;
+  const series = rawSeries.map(s => {
+    const frac = total > 0 ? (s.value || 0) / total * 100 : 0;
+    const startPct = acc, endPct = acc + frac;
+    acc = endPct;
+    return { ...s, frac, startPct, endPct };
   });
 
-  pie.style.background = `conic-gradient(${stops.join(', ')})`;
-  const biggestPct = (biggest.value || 0) / total * 100;
-  label.textContent = biggestPct.toFixed(1).replace('.', ',') + '%';
-
-  legend.innerHTML = series.map(s => `
-    <div class="legend-row">
-      <span class="legend-dot" style="background:${s.color}"></span>
-      <span class="legend-text">${s.name}</span>
-      <span class="legend-val">${s.value != null ? fmtPct(s.value) : '—'}</span>
-    </div>`).join('');
+  pieState = { series, total, selected: null };
+  drawPie();
+  buildPieLegend();
 
   const pillEl = document.getElementById('piePill');
   if (pillEl) pillEl.className = 'pill';
+}
+
+function drawPie(){
+  const pie = document.getElementById('pieChart');
+  const label = document.getElementById('pieLabel');
+  const { series, total, selected } = pieState;
+
+  if (!series.length || total <= 0){
+    pie.style.background = 'conic-gradient(#e2e5e4 0 100%)';
+    label.textContent = 'sem dados';
+    return;
+  }
+
+  const stops = series.map(s => {
+    const color = (selected == null || selected === s.id) ? s.color : '#e2e5e4';
+    return `${color} ${s.startPct}% ${s.endPct}%`;
+  });
+  pie.style.background = `conic-gradient(${stops.join(', ')})`;
+
+  if (selected != null){
+    const sel = series.find(s => s.id === selected);
+    label.textContent = sel && sel.value != null ? fmtPct(sel.value) : 'sem dado';
+  } else {
+    let biggest = series[0];
+    series.forEach(s => { if ((s.value || 0) > (biggest.value || 0)) biggest = s; });
+    const biggestPct = (biggest.value || 0) / total * 100;
+    label.textContent = biggestPct.toFixed(1).replace('.', ',') + '%';
+  }
+}
+
+function buildPieLegend(){
+  const legend = document.getElementById('pieLegend');
+  const { series, selected } = pieState;
+
+  if (!series.length){
+    legend.innerHTML = '<div class="legend-row"><span class="legend-text">Nenhum indicador encontrado.</span></div>';
+    return;
+  }
+
+  legend.innerHTML = series.map(s => {
+    const isActive = selected === s.id;
+    const isDimmed = selected != null && !isActive;
+    return `<div class="legend-row${isActive ? ' active' : ''}${isDimmed ? ' dimmed' : ''}" onclick="selectSlice('${s.id}')">
+      <span class="legend-dot" style="background:${s.color}"></span>
+      <span class="legend-text">${s.name}</span>
+      <span class="legend-val">${s.value != null ? fmtPct(s.value) : '—'}</span>
+    </div>`;
+  }).join('');
+}
+
+function selectSlice(id){
+  pieState.selected = (pieState.selected === id) ? null : id;
+  drawPie();
+  buildPieLegend();
+}
+
+function handlePieClick(evt){
+  const { series, total } = pieState;
+  if (!series.length || total <= 0) return;
+  const rect = evt.currentTarget.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = evt.clientX - cx;
+  const dy = evt.clientY - cy;
+  let angle = Math.atan2(dx, -dy) * 180 / Math.PI; // 0deg = topo, sentido horário (igual ao conic-gradient)
+  if (angle < 0) angle += 360;
+  const pct = angle / 360 * 100;
+  const hit = series.find(s => pct >= s.startPct && pct < s.endPct);
+  if (hit) selectSlice(hit.id);
 }
 
 /* =========================================================
