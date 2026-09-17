@@ -211,7 +211,7 @@
     padding:24px 24px 8px;
     margin-bottom:22px;
   }
-  .table-wrap{overflow-x:auto;}
+  .table-wrap{overflow-x:auto;overflow-y:auto;max-height:560px;}
   table{width:100%;border-collapse:collapse;font-size:16px;}
   thead th{
     text-align:left;
@@ -224,7 +224,14 @@
     background:#f3f5f4;
     border-bottom:1px solid var(--card-border);
     white-space:nowrap;
+    position:sticky;
+    top:0;
+    z-index:2;
+    box-shadow:0 1px 0 var(--card-border);
   }
+  thead th.sortable{cursor:pointer;user-select:none;}
+  thead th.sortable:hover{color:var(--text);}
+  .sort-arrow{font-size:10px;margin-left:4px;opacity:.4;display:inline-block;}
   tbody td{
     padding:14px 14px;
     border-bottom:1px solid #eceeed;
@@ -263,7 +270,7 @@
   tbody tr.enviado .badge{background:rgba(0,0,0,.24);color:#ffffff;}
   tbody tr.enviado .prazo-tag{color:#ffe8ea;}
   .desc-cell{font-weight:700;color:var(--text);}
-  .cliente-cell{color:var(--muted);font-weight:600;}
+  .cliente-cell{color:var(--text);font-weight:600;}
   .badge{
     display:inline-flex;align-items:center;gap:6px;
     padding:6px 14px;
@@ -347,11 +354,11 @@
       <table id="ordersTable">
         <thead>
           <tr>
-            <th>Desc.</th>
-            <th>Cliente</th>
-            <th>Prazo para emb.</th>
-            <th>Status</th>
-            <th style="text-align:right;">Quant.</th>
+            <th class="sortable" onclick="handleSort('desc')">Desc. <span class="sort-arrow" id="arrow-desc">↕</span></th>
+            <th class="sortable" onclick="handleSort('cliente')">Cliente <span class="sort-arrow" id="arrow-cliente">↕</span></th>
+            <th class="sortable" onclick="handleSort('prazo')">Prazo para emb. <span class="sort-arrow" id="arrow-prazo">↕</span></th>
+            <th class="sortable" onclick="handleSort('status')">Status <span class="sort-arrow" id="arrow-status">↕</span></th>
+            <th class="sortable" style="text-align:right;" onclick="handleSort('quant')">Quant. <span class="sort-arrow" id="arrow-quant">↕</span></th>
           </tr>
         </thead>
         <tbody id="ordersBody">
@@ -475,24 +482,73 @@ function statusBadge(statusRaw, prazoRaw){
   return { cls:'badge-grey', label:status, atrasado:false, urgente:false };
 }
 
+/* Ordenação clicável da tabela: guarda os dados brutos e o estado de
+   ordenação atual (coluna + direção), e re-renderiza ao clicar num cabeçalho. */
+let ordersData = [];
+let sortState = { col: 'prazo', dir: 'asc' }; // padrão inicial: prazo mais próximo primeiro
+
+function compareOrders(a, b, col){
+  if (col === 'quant'){
+    const na = toNumber(a.quant) || 0;
+    const nb = toNumber(b.quant) || 0;
+    return na - nb;
+  }
+  if (col === 'prazo'){
+    const da = parseBRDate(a.prazo), db = parseBRDate(b.prazo);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return da - db;
+  }
+  const key = col === 'desc' ? 'desc' : col; // 'desc', 'cliente' ou 'status'
+  const va = (a[key] || '').toString().toLowerCase();
+  const vb = (b[key] || '').toString().toLowerCase();
+  return va.localeCompare(vb, 'pt-BR');
+}
+
+function handleSort(col){
+  if (sortState.col === col){
+    sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortState.col = col;
+    sortState.dir = 'asc';
+  }
+  renderSortedOrders();
+}
+
+function updateSortArrows(){
+  ['desc','cliente','prazo','status','quant'].forEach(col => {
+    const el = document.getElementById('arrow-' + col);
+    if (!el) return;
+    if (sortState.col === col){
+      el.textContent = sortState.dir === 'asc' ? '▲' : '▼';
+      el.style.opacity = '1';
+    } else {
+      el.textContent = '↕';
+      el.style.opacity = '.4';
+    }
+  });
+}
+
+function renderSortedOrders(){
+  const sorted = [...ordersData].sort((a, b) => {
+    const cmp = compareOrders(a, b, sortState.col);
+    return sortState.dir === 'asc' ? cmp : -cmp;
+  });
+  renderOrders(sorted);
+  updateSortArrows();
+}
+
 function renderOrders(data){
   const tbody = document.getElementById('ordersBody');
   if (!data.length){
     tbody.innerHTML = '<tr><td colspan="5" class="empty">Nenhuma ordem encontrada na planilha.</td></tr>';
     return;
   }
-  // ordena por prazo (mais próximo primeiro)
-  const sorted = [...data].sort((a,b) => {
-    const da = parseBRDate(a.prazo), db = parseBRDate(b.prazo);
-    if (!da && !db) return 0;
-    if (!da) return 1;
-    if (!db) return -1;
-    return da - db;
-  });
 
   let anyAtrasado = false;
   let anyUrgente = false;
-  tbody.innerHTML = sorted.map(o => {
+  tbody.innerHTML = data.map(o => {
     const b = statusBadge(o.status, o.prazo);
     if (b.atrasado) anyAtrasado = true;
     if (b.urgente) anyUrgente = true;
@@ -655,7 +711,8 @@ async function loadAll(){
   const statusText = document.getElementById('status-text');
   try{
     const [orders, indicators] = await Promise.all([fetchOrders(), fetchIndicators()]);
-    renderOrders(orders);
+    ordersData = orders;
+    renderSortedOrders();
     renderPie(indicators);
     const now = new Date();
     statusText.textContent = 'atualizado às ' + now.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
